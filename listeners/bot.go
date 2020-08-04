@@ -53,14 +53,19 @@ func (s entries) Len() int           { return len(s) }
 func (s entries) Less(i, j int) bool { return s[i].val < s[j].val }
 func (s entries) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
-func sortByValue(m map[string]float64) entries {
+func organizeAndSortByValue(m map[string]float64, amount int) string {
 	var es entries
 	for k, v := range m {
 		es = append(es, entry{val: v, key: k})
 	}
-
 	sort.Sort(sort.Reverse(es))
-	return es
+	var s string
+	for i, e := range es {
+		if i < amount {
+			s += fmt.Sprintf("%s $%.2f\n", e.key, e.val)
+		}
+	}
+	return s
 }
 
 func top(botCtx slacker.BotContext, request slacker.Request, response slacker.ResponseWriter) (amount int, time int64, units string, valid string) {
@@ -95,19 +100,25 @@ func topCategories(botCtx slacker.BotContext, request slacker.Request, response 
 		return
 	}
 	m, err := c.TopCategory(ctx, &pb.TopRequest{
-		ID:    -1,
 		Time:  timeAmount,
-		Units: units,
-		Param: "Covid WFH"})
+		Units: units})
 	handle(err)
-	es := sortByValue(m.GetToplist())
-	var s string = ""
-	for i, e := range es {
-		if i < amount {
-			s += fmt.Sprintf("%s %.2f\n", e.key, e.val)
-		}
+	response.Reply(organizeAndSortByValue(m.GetToplist(), amount))
+}
+
+func topEmployees(botCtx slacker.BotContext, request slacker.Request, response slacker.ResponseWriter) {
+	amount, timeAmount, units, valid := top(botCtx, request, response)
+	ctx, cancel := context.WithTimeout(context.Background(), 1000000000*time.Second)
+	defer cancel()
+	if valid != "ok" {
+		response.Reply(valid)
+		return
 	}
-	response.Reply(s)
+	m, err := c.TopEmployee(ctx, &pb.TopRequest{
+		Time:  timeAmount,
+		Units: units})
+	handle(err)
+	response.Reply(organizeAndSortByValue(m.GetToplist(), amount))
 }
 
 // have a gflag for the value, default is null - caller passes in the token
@@ -135,12 +146,17 @@ func Run() {
 		Handler: test,
 	}
 	topCategoriesDefinition := &slacker.CommandDefinition{
-		Description: "Gives an ordered list of employeeds or groups based off of the parameters given.",
+		Description: "Gives an list of categories in sorted order decending by total spent based off of the parameters given.",
 		Handler:     topCategories,
+	}
+	topEmployeesDefinition := &slacker.CommandDefinition{
+		Description: "Gives an list of employees in sorted order decending by total spent based off of the parameters given.",
+		Handler:     topEmployees,
 	}
 	bot.Command("ping", definition1)
 	bot.Command("test", definition2)
 	bot.Command("top categories <amount> <time> <units>", topCategoriesDefinition)
+	bot.Command("top employees <amount> <time> <units>", topEmployeesDefinition)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

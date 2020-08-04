@@ -18,6 +18,7 @@ const _ = grpc.SupportPackageIsVersion6
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ServicesClient interface {
 	TopCategory(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (*TopResponse, error)
+	TopEmployee(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (*TopResponse, error)
 }
 
 type servicesClient struct {
@@ -37,11 +38,21 @@ func (c *servicesClient) TopCategory(ctx context.Context, in *TopRequest, opts .
 	return out, nil
 }
 
+func (c *servicesClient) TopEmployee(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (*TopResponse, error) {
+	out := new(TopResponse)
+	err := c.cc.Invoke(ctx, "/proto.Services/topEmployee", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ServicesServer is the server API for Services service.
 // All implementations must embed UnimplementedServicesServer
 // for forward compatibility
 type ServicesServer interface {
 	TopCategory(context.Context, *TopRequest) (*TopResponse, error)
+	TopEmployee(context.Context, *TopRequest) (*TopResponse, error)
 	mustEmbedUnimplementedServicesServer()
 }
 
@@ -51,6 +62,9 @@ type UnimplementedServicesServer struct {
 
 func (*UnimplementedServicesServer) TopCategory(context.Context, *TopRequest) (*TopResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TopCategory not implemented")
+}
+func (*UnimplementedServicesServer) TopEmployee(context.Context, *TopRequest) (*TopResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TopEmployee not implemented")
 }
 func (*UnimplementedServicesServer) mustEmbedUnimplementedServicesServer() {}
 
@@ -76,6 +90,24 @@ func _Services_TopCategory_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Services_TopEmployee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ServicesServer).TopEmployee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Services/TopEmployee",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServicesServer).TopEmployee(ctx, req.(*TopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Services_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.Services",
 	HandlerType: (*ServicesServer)(nil),
@@ -83,6 +115,10 @@ var _Services_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "topCategory",
 			Handler:    _Services_TopCategory_Handler,
+		},
+		{
+			MethodName: "topEmployee",
+			Handler:    _Services_TopEmployee_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

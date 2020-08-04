@@ -6,10 +6,8 @@ option go_package = ".;proto";
 
 
 message topRequest {
-    int64 ID = 1;
     int64 time = 2;
     string units = 3;
-    string param = 4;
 }
 
 
@@ -19,4 +17,5 @@ message topResponse {
 
 service Services {
     rpc topCategory(topRequest) returns (topResponse);
+    rpc topEmployee(topRequest) returns (topResponse);
 }
