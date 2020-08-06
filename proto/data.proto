@@ -6,16 +6,17 @@ option go_package = ".;proto";
 
 
 message topRequest {
-    int64 time = 2;
-    string units = 3;
+    int64 time = 1;
+    string units = 2;
 }
 
 
 message topResponse {
-    map<string, double> toplist = 1;
+    string ID = 1;
+    double amount = 2;
 }
 
 service Services {
-    rpc topCategory(topRequest) returns (topResponse);
-    rpc topEmployee(topRequest) returns (topResponse);
+    rpc topCategory(topRequest) returns (stream topResponse);
+    rpc topEmployee(topRequest) returns (stream topResponse);
 }

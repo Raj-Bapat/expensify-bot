@@ -10,6 +10,7 @@ import (
 	"github.com/shomali11/slacker"
 	// "github.com/disiqueira/gocurrency"
 	//idk
+	"github.com/emirpasic/gods/sets/treeset"
 	_ "github.com/go-sql-driver/mysql"
 	// "github.com/shopspring/decimal"
 	"google.golang.org/grpc"
@@ -17,7 +18,7 @@ import (
 	// "sort"
 	// "net"
 	// "strings"
-	"sort"
+	"io"
 )
 
 func handle(err error) {
@@ -42,30 +43,26 @@ var conn *grpc.ClientConn
 var err error
 var c pb.ServicesClient
 
-type entry struct {
-	val float64
-	key string
+//Pair implements a string float pair
+type Pair struct {
+	first  string
+	second float64
 }
 
-type entries []entry
+func byPair(a, b interface{}) int {
 
-func (s entries) Len() int           { return len(s) }
-func (s entries) Less(i, j int) bool { return s[i].val < s[j].val }
-func (s entries) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+	// Type assertion, program will panic if this is not respected
+	c1 := a.(Pair)
+	c2 := b.(Pair)
 
-func organizeAndSortByValue(m map[string]float64, amount int) string {
-	var es entries
-	for k, v := range m {
-		es = append(es, entry{val: v, key: k})
+	switch {
+	case c1.second < c2.second:
+		return 1
+	case c1.second > c2.second:
+		return -1
+	default:
+		return 0
 	}
-	sort.Sort(sort.Reverse(es))
-	var s string
-	for i, e := range es {
-		if i < amount {
-			s += fmt.Sprintf("%s $%.2f\n", e.key, e.val)
-		}
-	}
-	return s
 }
 
 func top(botCtx slacker.BotContext, request slacker.Request, response slacker.ResponseWriter) (amount int, time int64, units string, valid string) {
@@ -99,11 +96,29 @@ func topCategories(botCtx slacker.BotContext, request slacker.Request, response 
 		response.Reply(valid)
 		return
 	}
-	m, err := c.TopCategory(ctx, &pb.TopRequest{
+	stream, err := c.TopEmployee(ctx, &pb.TopRequest{
 		Time:  timeAmount,
 		Units: units})
 	handle(err)
-	response.Reply(organizeAndSortByValue(m.GetToplist(), amount))
+	set := treeset.NewWith(byPair)
+	for {
+		person, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		handle(err)
+		set.Add(Pair{person.GetID(), person.GetAmount()})
+		if set.Size() > amount {
+			it := set.Iterator()
+			it.Last()
+			set.Remove(Pair{it.Value().(Pair).first, it.Value().(Pair).second})
+		}
+	}
+	var res string
+	for _, val := range set.Values() {
+		res += fmt.Sprintf("%q: %.2f\n", val.(Pair).first, val.(Pair).second)
+	}
+	response.Reply(res)
 }
 
 func topEmployees(botCtx slacker.BotContext, request slacker.Request, response slacker.ResponseWriter) {
@@ -114,11 +129,29 @@ func topEmployees(botCtx slacker.BotContext, request slacker.Request, response s
 		response.Reply(valid)
 		return
 	}
-	m, err := c.TopEmployee(ctx, &pb.TopRequest{
+	stream, err := c.TopEmployee(ctx, &pb.TopRequest{
 		Time:  timeAmount,
 		Units: units})
 	handle(err)
-	response.Reply(organizeAndSortByValue(m.GetToplist(), amount))
+	set := treeset.NewWith(byPair)
+	for {
+		person, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		handle(err)
+		set.Add(Pair{person.GetID(), person.GetAmount()})
+		if set.Size() > amount {
+			it := set.Iterator()
+			it.Last()
+			set.Remove(Pair{it.Value().(Pair).first, it.Value().(Pair).second})
+		}
+	}
+	var res string
+	for _, val := range set.Values() {
+		res += fmt.Sprintf("%q: %.2f\n", val.(Pair).first, val.(Pair).second)
+	}
+	response.Reply(res)
 }
 
 // have a gflag for the value, default is null - caller passes in the token
@@ -131,6 +164,9 @@ func topEmployees(botCtx slacker.BotContext, request slacker.Request, response s
 // gflags - at runtime, constant - at buildtime
 
 //Run bot
+
+// 2 tables, one for submitted and approved
+
 func Run() {
 	conn, err = grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -146,20 +182,24 @@ func Run() {
 		Handler: test,
 	}
 	topCategoriesDefinition := &slacker.CommandDefinition{
-		Description: "Gives an list of categories in sorted order decending by total spent based off of the parameters given.",
+		Description: "Gives a list of categories in sorted order decending by total spent based off of the parameters given.",
 		Handler:     topCategories,
 	}
 	topEmployeesDefinition := &slacker.CommandDefinition{
-		Description: "Gives an list of employees in sorted order decending by total spent based off of the parameters given.",
+		Description: "Gives a list of employees in sorted order decending by total spent based off of the parameters given.",
 		Handler:     topEmployees,
 	}
+	// summaryDefinition := &slacker.CommandDefinition{
+	// 	Description: "Gives a bar graph showing how much money a particular employee spent on each category"
+	// }
+
 	bot.Command("ping", definition1)
 	bot.Command("test", definition2)
 	bot.Command("top categories <amount> <time> <units>", topCategoriesDefinition)
 	bot.Command("top employees <amount> <time> <units>", topEmployeesDefinition)
+	// bot.Command("histdata <amount> <time> <units>", )
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	err := bot.Listen(ctx)
 	if err != nil {
 		log.Fatal(err)

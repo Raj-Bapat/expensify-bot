@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	// "context"
 	"database/sql"
 	pb "expensify-bot/proto"
 	"fmt"
@@ -14,8 +14,10 @@ import (
 	// "google.golang.org/protobuf/proto"
 	"log"
 	// "sort"
+	// "container/heap"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -27,6 +29,7 @@ func handle(err error) {
 
 type server struct {
 	db *sql.DB
+	mu sync.Mutex
 	pb.UnimplementedServicesServer
 }
 
@@ -50,12 +53,12 @@ func getOldDate(unit string, amnt int) (t time.Time) {
 	return currDate.AddDate(-amnt, 0, 0)
 }
 
-func (s *server) TopCategory(ctx context.Context, treq *pb.TopRequest) (*pb.TopResponse, error) {
+func (s *server) TopCategory(treq *pb.TopRequest, stream pb.Services_TopCategoryServer) error {
 	currDate = time.Now()
 	checkDate := getOldDate(treq.GetUnits(), int(treq.GetTime()))
-	m := make(map[string]float64)
 	rows, err := s.db.Query("SELECT SUM(Amount) as total, Currency, Category, ReportTimestamp FROM requests GROUP BY Currency, Category, ReportTimestamp")
 	handle(err)
+	m := make(map[string]float64)
 	for rows.Next() {
 		var (
 			total     float64
@@ -79,15 +82,21 @@ func (s *server) TopCategory(ctx context.Context, treq *pb.TopRequest) (*pb.TopR
 			m[Category] += total
 		}
 	}
-	return &pb.TopResponse{Toplist: m}, nil
+	for k, v := range m {
+		err := stream.Send(&pb.TopResponse{
+			ID:     k,
+			Amount: v})
+		handle(err)
+	}
+	return nil
 }
 
-func (s *server) TopEmployee(ctx context.Context, treq *pb.TopRequest) (*pb.TopResponse, error) {
+func (s *server) TopEmployee(treq *pb.TopRequest, stream pb.Services_TopEmployeeServer) error {
 	currDate = time.Now()
 	checkDate := getOldDate(treq.GetUnits(), int(treq.GetTime()))
-	m := make(map[string]float64)
 	rows, err := s.db.Query("SELECT SUM(Amount) as total, Currency, UserID, ReportTimestamp FROM requests GROUP BY Currency, UserID, ReportTimestamp")
 	handle(err)
+	m := make(map[string]float64)
 	for rows.Next() {
 		var (
 			total     float64
@@ -100,19 +109,24 @@ func (s *server) TopEmployee(ctx context.Context, treq *pb.TopRequest) (*pb.TopR
 		if formattedTimestamp.Before(checkDate) == true {
 			continue
 		}
-		var userIDString = strconv.FormatInt(UserID, 10)
 		swapper := swap.NewSwap()
 		swapper.AddExchanger(ex.NewYahooApi(map[string]string{
 			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.105 Safari/537.36"})).Build()
 		if Currency != "USD" {
 			convformat := Currency + "/USD"
 			rate := swapper.Latest(convformat)
-			m[userIDString] += total * rate.GetRateValue()
+			m[strconv.FormatInt(UserID, 10)] += total * rate.GetRateValue()
 		} else {
-			m[userIDString] += total
+			m[strconv.FormatInt(UserID, 10)] += total
 		}
 	}
-	return &pb.TopResponse{Toplist: m}, nil
+	for k, v := range m {
+		err := stream.Send(&pb.TopResponse{
+			ID:     k,
+			Amount: v})
+		handle(err)
+	}
+	return nil
 }
 
 func newServer() *server {
@@ -123,6 +137,7 @@ func newServer() *server {
 }
 
 // Run the server
+
 func main() {
 	fmt.Println("hi")
 	lis, err := net.Listen("tcp", ":2014")
