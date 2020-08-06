@@ -96,7 +96,7 @@ func topCategories(botCtx slacker.BotContext, request slacker.Request, response 
 		response.Reply(valid)
 		return
 	}
-	stream, err := c.TopEmployee(ctx, &pb.TopRequest{
+	stream, err := c.TopCategory(ctx, &pb.TopRequest{
 		Time:  timeAmount,
 		Units: units})
 	handle(err)
@@ -163,10 +163,8 @@ func topEmployees(botCtx slacker.BotContext, request slacker.Request, response s
 // 	- have all the db calls as flags so others can change them easily
 // gflags - at runtime, constant - at buildtime
 
-//Run bot
-
 // 2 tables, one for submitted and approved
-
+//Run bot
 func Run() {
 	conn, err = grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
