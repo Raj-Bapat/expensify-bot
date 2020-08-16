@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion6
 type ServicesClient interface {
 	TopCategory(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (Services_TopCategoryClient, error)
 	TopEmployee(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (Services_TopEmployeeClient, error)
+	Summary(ctx context.Context, in *SummaryRequest, opts ...grpc.CallOption) (Services_SummaryClient, error)
 }
 
 type servicesClient struct {
@@ -93,12 +94,45 @@ func (x *servicesTopEmployeeClient) Recv() (*TopResponse, error) {
 	return m, nil
 }
 
+func (c *servicesClient) Summary(ctx context.Context, in *SummaryRequest, opts ...grpc.CallOption) (Services_SummaryClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Services_serviceDesc.Streams[2], "/proto.Services/Summary", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &servicesSummaryClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Services_SummaryClient interface {
+	Recv() (*SummaryResponse, error)
+	grpc.ClientStream
+}
+
+type servicesSummaryClient struct {
+	grpc.ClientStream
+}
+
+func (x *servicesSummaryClient) Recv() (*SummaryResponse, error) {
+	m := new(SummaryResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ServicesServer is the server API for Services service.
 // All implementations must embed UnimplementedServicesServer
 // for forward compatibility
 type ServicesServer interface {
 	TopCategory(*TopRequest, Services_TopCategoryServer) error
 	TopEmployee(*TopRequest, Services_TopEmployeeServer) error
+	Summary(*SummaryRequest, Services_SummaryServer) error
 	mustEmbedUnimplementedServicesServer()
 }
 
@@ -111,6 +145,9 @@ func (*UnimplementedServicesServer) TopCategory(*TopRequest, Services_TopCategor
 }
 func (*UnimplementedServicesServer) TopEmployee(*TopRequest, Services_TopEmployeeServer) error {
 	return status.Errorf(codes.Unimplemented, "method TopEmployee not implemented")
+}
+func (*UnimplementedServicesServer) Summary(*SummaryRequest, Services_SummaryServer) error {
+	return status.Errorf(codes.Unimplemented, "method Summary not implemented")
 }
 func (*UnimplementedServicesServer) mustEmbedUnimplementedServicesServer() {}
 
@@ -160,6 +197,27 @@ func (x *servicesTopEmployeeServer) Send(m *TopResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Services_Summary_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SummaryRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ServicesServer).Summary(m, &servicesSummaryServer{stream})
+}
+
+type Services_SummaryServer interface {
+	Send(*SummaryResponse) error
+	grpc.ServerStream
+}
+
+type servicesSummaryServer struct {
+	grpc.ServerStream
+}
+
+func (x *servicesSummaryServer) Send(m *SummaryResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _Services_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.Services",
 	HandlerType: (*ServicesServer)(nil),
@@ -173,6 +231,11 @@ var _Services_serviceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "topEmployee",
 			Handler:       _Services_TopEmployee_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "Summary",
+			Handler:       _Services_Summary_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -15,11 +15,18 @@ import (
 	"log"
 	// "sort"
 	// "container/heap"
+	"bufio"
+	"github.com/wcharczuk/go-chart"
+	"io"
 	"net"
+	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
 )
+
+// yesma
 
 func handle(err error) {
 	if err != nil {
@@ -125,6 +132,93 @@ func (s *server) TopEmployee(treq *pb.TopRequest, stream pb.Services_TopEmployee
 			ID:     k,
 			Amount: v})
 		handle(err)
+	}
+	return nil
+}
+
+func (s *server) Summary(sreq *pb.SummaryRequest, stream pb.Services_SummaryServer) error {
+	currDate = time.Now()
+	checkDate := getOldDate(sreq.GetUnits(), int(sreq.GetTime()))
+	m := make(map[string]float64)
+	graph := chart.BarChart{
+		Title: "Total in expenses per category",
+		Background: chart.Style{
+			Padding: chart.Box{
+				Top: 40,
+			},
+		},
+		Height:   512,
+		BarWidth: 60,
+		Bars:     []chart.Value{},
+	}
+	askSQL := fmt.Sprintf("select SUM(Amount) as Total, Currency, Category, TransactionTimestamp from requests where UserID=%q group by Currency, Category, TransactionTimestamp", sreq.GetID())
+	rows, err := s.db.Query(askSQL)
+	handle(err)
+	for rows.Next() {
+		var (
+			total     float64
+			Currency  string
+			Category  string
+			Timestamp string
+		)
+		rows.Scan(&total, &Currency, &Category, &Timestamp)
+		formattedTimestamp := parseDate(Timestamp)
+		if formattedTimestamp.Before(checkDate) == true {
+			continue
+		}
+		swapper := swap.NewSwap()
+		swapper.AddExchanger(ex.NewYahooApi(map[string]string{
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.105 Safari/537.36"})).Build()
+		if Currency != "USD" {
+			convformat := Currency + "/USD"
+			rate := swapper.Latest(convformat)
+			m[Category] += total * rate.GetRateValue()
+		} else {
+			m[Category] += total
+		}
+	}
+	keys := make([]string, len(m))
+	i := 0
+	for k := range m {
+		keys[i] = k
+		i++
+	}
+	sort.Strings(keys)
+
+	// To perform the opertion you want
+	maxval := 0.0
+	for _, k := range keys {
+		graph.Bars = append(graph.Bars, chart.Value{Value: m[k], Label: k})
+		if maxval < m[k] {
+			maxval = m[k]
+		}
+	}
+	graph.YAxis.Range = &chart.ContinuousRange{
+		Min: 0,
+		Max: maxval,
+	}
+	// for k, v := range m {
+	// 	graph.Bars = append(graph.Bars, chart.Value{Value: v, Label: k})
+	// }
+	f, _ := os.Create("input.png")
+	defer f.Close()
+	err = graph.Render(chart.PNG, f)
+	handle(err)
+	f, _ = os.Open("input.png")
+	reader := bufio.NewReader(f)
+	buffer := make([]byte, 1024)
+	for {
+		n, err := reader.Read(buffer)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatal("cannot read chunk to buffer: ", err)
+		}
+		err = stream.Send(&pb.SummaryResponse{ChunkData: buffer[:n]})
+		if err != nil {
+			log.Fatal("cannot send chunk to server: ", err)
+		}
 	}
 	return nil
 }

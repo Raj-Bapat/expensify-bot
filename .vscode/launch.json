@@ -9,7 +9,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/server",
+            "program": "${workspaceFolder}/server/server.go",
             "env": {},
             "args": []
         },
@@ -18,7 +18,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/client",
+            "program": "${workspaceFolder}/client/main.go",
             "env": {},
             "args": []
         }

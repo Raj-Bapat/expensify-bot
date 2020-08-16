@@ -16,7 +16,18 @@ message topResponse {
     double amount = 2;
 }
 
+message summaryRequest {
+    string ID = 1;
+    int64 time = 2;
+    string units = 3;
+}
+
+message summaryResponse {
+    bytes chunk_data = 1;
+}
+
 service Services {
     rpc topCategory(topRequest) returns (stream topResponse);
     rpc topEmployee(topRequest) returns (stream topResponse);
+    rpc Summary(summaryRequest) returns (stream summaryResponse);
 }
