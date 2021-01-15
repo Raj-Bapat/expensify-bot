@@ -20,6 +20,7 @@ type ServicesClient interface {
 	TopCategory(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (Services_TopCategoryClient, error)
 	TopEmployee(ctx context.Context, in *TopRequest, opts ...grpc.CallOption) (Services_TopEmployeeClient, error)
 	Summary(ctx context.Context, in *SummaryRequest, opts ...grpc.CallOption) (Services_SummaryClient, error)
+	ProcessNewRequests(ctx context.Context, in *UpdateConfirmation, opts ...grpc.CallOption) (Services_ProcessNewRequestsClient, error)
 }
 
 type servicesClient struct {
@@ -126,6 +127,38 @@ func (x *servicesSummaryClient) Recv() (*SummaryResponse, error) {
 	return m, nil
 }
 
+func (c *servicesClient) ProcessNewRequests(ctx context.Context, in *UpdateConfirmation, opts ...grpc.CallOption) (Services_ProcessNewRequestsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Services_serviceDesc.Streams[3], "/proto.Services/processNewRequests", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &servicesProcessNewRequestsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Services_ProcessNewRequestsClient interface {
+	Recv() (*NonCompliantRequest, error)
+	grpc.ClientStream
+}
+
+type servicesProcessNewRequestsClient struct {
+	grpc.ClientStream
+}
+
+func (x *servicesProcessNewRequestsClient) Recv() (*NonCompliantRequest, error) {
+	m := new(NonCompliantRequest)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ServicesServer is the server API for Services service.
 // All implementations must embed UnimplementedServicesServer
 // for forward compatibility
@@ -133,6 +166,7 @@ type ServicesServer interface {
 	TopCategory(*TopRequest, Services_TopCategoryServer) error
 	TopEmployee(*TopRequest, Services_TopEmployeeServer) error
 	Summary(*SummaryRequest, Services_SummaryServer) error
+	ProcessNewRequests(*UpdateConfirmation, Services_ProcessNewRequestsServer) error
 	mustEmbedUnimplementedServicesServer()
 }
 
@@ -148,6 +182,9 @@ func (*UnimplementedServicesServer) TopEmployee(*TopRequest, Services_TopEmploye
 }
 func (*UnimplementedServicesServer) Summary(*SummaryRequest, Services_SummaryServer) error {
 	return status.Errorf(codes.Unimplemented, "method Summary not implemented")
+}
+func (*UnimplementedServicesServer) ProcessNewRequests(*UpdateConfirmation, Services_ProcessNewRequestsServer) error {
+	return status.Errorf(codes.Unimplemented, "method ProcessNewRequests not implemented")
 }
 func (*UnimplementedServicesServer) mustEmbedUnimplementedServicesServer() {}
 
@@ -218,6 +255,27 @@ func (x *servicesSummaryServer) Send(m *SummaryResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Services_ProcessNewRequests_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(UpdateConfirmation)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ServicesServer).ProcessNewRequests(m, &servicesProcessNewRequestsServer{stream})
+}
+
+type Services_ProcessNewRequestsServer interface {
+	Send(*NonCompliantRequest) error
+	grpc.ServerStream
+}
+
+type servicesProcessNewRequestsServer struct {
+	grpc.ServerStream
+}
+
+func (x *servicesProcessNewRequestsServer) Send(m *NonCompliantRequest) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _Services_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.Services",
 	HandlerType: (*ServicesServer)(nil),
@@ -236,6 +294,11 @@ var _Services_serviceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Summary",
 			Handler:       _Services_Summary_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "processNewRequests",
+			Handler:       _Services_ProcessNewRequests_Handler,
 			ServerStreams: true,
 		},
 	},

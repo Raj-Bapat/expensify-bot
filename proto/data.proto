@@ -26,8 +26,21 @@ message summaryResponse {
     bytes chunk_data = 1;
 }
 
+message updateConfirmation {
+    string confirmed = 1;
+}
+
+message nonCompliantRequest {
+    string email = 1;
+    string category = 2;
+    double amount = 3;
+    double limit = 4;
+    int64 ReportID = 5;
+}
+
 service Services {
     rpc topCategory(topRequest) returns (stream topResponse);
     rpc topEmployee(topRequest) returns (stream topResponse);
     rpc Summary(summaryRequest) returns (stream summaryResponse);
+    rpc processNewRequests(updateConfirmation) returns (stream nonCompliantRequest);
 }

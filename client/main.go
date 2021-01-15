@@ -18,11 +18,12 @@ import (
 )
 
 // Run the server
-// how recent the non compliance was, how frequent it occurs, size of the non compliance, how they compare to other people - count/sum of non compliance expense
+// how recent the non compliance was, how frequent it occurs, size of the non compliance, how thetwaawy compare to other people - count/sum of non compliance expense
 // control things as gflags - if we want to increase somethings
 // cron job
 // scheduled / constantly running
 // expected run time
+// table for non-compliant requests with similar schema
 
 func main() {
 	fmt.Println("here")

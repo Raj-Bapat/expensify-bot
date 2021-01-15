@@ -22,6 +22,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	// "strings"
 	"sync"
 	"time"
 )
@@ -30,7 +31,7 @@ import (
 
 func handle(err error) {
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		panic(err)
 	}
 }
 
@@ -42,6 +43,7 @@ type server struct {
 
 // dropping the time
 var currDate time.Time
+var staticChecks map[string]float64
 
 func parseDate(formattedDate string) (t time.Time) {
 	dt, err := time.Parse("1/2/2006 15:04", formattedDate)
@@ -223,17 +225,126 @@ func (s *server) Summary(sreq *pb.SummaryRequest, stream pb.Services_SummaryServ
 	return nil
 }
 
+func (s *server) make_table(name string) error {
+	qry := fmt.Sprintf("SELECT count(*) FROM information_schema.TABLES WHERE (TABLE_SCHEMA = 'expensify_requests') AND (TABLE_NAME = '%s')", name)
+	atqry := fmt.Sprintf("CREATE TABLE %s LIKE requests", name)
+	rows, err := s.db.Query(qry)
+	handle(err)
+	var exists int64
+	rows.Next()
+	rows.Scan(&exists)
+	if exists == 0 {
+		stmt, err := s.db.Prepare(atqry)
+		handle(err)
+		_, err = stmt.Exec()
+		handle(err)
+	}
+	return nil
+}
+
+func (s *server) initialise_tables() error {
+	s.make_table("non_compliant")
+	s.make_table("checked")
+	rows, err := s.db.Query("select * from requests")
+	handle(err)
+	names, err := rows.Columns()
+	handle(err)
+	hasRow := false
+	for _, val := range names {
+		if "checked" == val {
+			hasRow = true
+		}
+	}
+	if !hasRow {
+		s.db.Query("ALTER TABLE requests ADD COLUMN checked VARCHAR(255) Default 'no'")
+	}
+	return nil
+}
+
+func (s *server) ProcessNewRequests(inp *pb.UpdateConfirmation, stream pb.Services_ProcessNewRequestsServer) error {
+	rows, err := s.db.Query("SELECT id, ReportID, ReportName, ReportTimestamp, UserID, AccountEmail, Merchant, Amount, TransactionTimestamp, TransactionID, Category, TransactionType, PolicyName, Comment, Currency, CategoryGlCode, Tag, RecieptUrl FROM requests where checked = 'no'")
+	handle(err)
+	for rows.Next() {
+		var (
+			id                   int64
+			ReportID             int64
+			ReportName           string
+			ReportTimestamp      string
+			UserID               int64
+			AccountEmail         string
+			Merchant             string
+			Amount               float64
+			TransactionTimestamp string
+			TransactionID        string
+			Category             string
+			TransactionType      string
+			PolicyName           string
+			Comment              string
+			Currency             string
+			CategoryGlCode       int64
+			Tag                  string
+			RecieptUrl           string
+		)
+		rows.Scan(&id, &ReportID, &ReportName, &ReportTimestamp, &UserID, &AccountEmail, &Merchant, &Amount, &TransactionTimestamp, &TransactionID, &Category, &TransactionType, &PolicyName, &Comment, &Currency, &CategoryGlCode, &Tag, &RecieptUrl)
+
+		swapper := swap.NewSwap()
+		swapper.AddExchanger(ex.NewYahooApi(map[string]string{
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.105 Safari/537.36"})).Build()
+		var amnt float64
+		if Currency != "USD" {
+			convformat := Currency + "/USD"
+			rate := swapper.Latest(convformat)
+			amnt = Amount * rate.GetRateValue()
+		} else {
+			amnt = Amount
+		}
+		_, err := s.db.Query("UPDATE requests SET checked = 'yes' WHERE id = id")
+		handle(err)
+		if val, ok := staticChecks[Category]; ok {
+			if amnt > val {
+				err := stream.Send(&pb.NonCompliantRequest{
+					Email:    AccountEmail,
+					Category: Category,
+					Amount:   Amount,
+					Limit:    val,
+					ReportID: ReportID,
+				})
+				handle(err)
+				insertQuery := fmt.Sprintf("INSERT INTO non_compliant(id, ReportID, ReportName, ReportTimestamp, UserID, AccountEmail, Merchant, Amount, TransactionTimestamp, TransactionID, Category, TransactionType, PolicyName, Comment, Currency, CategoryGlCode, Tag, RecieptUrl) VALUES(%v, %v, %q, %q, %v, %q, %q, %f, %q, %q, %q, %q, %q, %q, %q, %v, %q, %q)", id, ReportID, ReportName, ReportTimestamp, UserID, AccountEmail, Merchant, Amount, TransactionTimestamp, TransactionID, Category, TransactionType, PolicyName, Comment, Currency, CategoryGlCode, Tag, RecieptUrl)
+				_, err = s.db.Query(insertQuery)
+				handle(err)
+				continue
+			}
+		}
+		insertQuery := fmt.Sprintf("INSERT INTO checked(id, ReportID, ReportName, ReportTimestamp, UserID, AccountEmail, Merchant, Amount, TransactionTimestamp, TransactionID, Category, TransactionType, PolicyName, Comment, Currency, CategoryGlCode, Tag, RecieptUrl) VALUES(%v, %v, %q, %q, %v, %q, %q, %f, %q, %q, %q, %q, %q, %q, %q, %v, %q, %q)", id, ReportID, ReportName, ReportTimestamp, UserID, AccountEmail, Merchant, Amount, TransactionTimestamp, TransactionID, Category, TransactionType, PolicyName, Comment, Currency, CategoryGlCode, Tag, RecieptUrl)
+		fmt.Println(insertQuery)
+		_, err = s.db.Query(insertQuery)
+		handle(err)
+	}
+	return nil
+}
+
 func newServer() *server {
 	db, err := sql.Open("mysql", "root:bapat2017@tcp(0.0.0.0:6603)/expensify_requests")
 	handle(err)
 	s := &server{db: db}
+	s.initialise_tables()
+	// go s.processNewRequests()
 	return s
+}
+
+func addChecks(k string, v float64) {
+	staticChecks[k] = v
 }
 
 // Run the server
 
 func main() {
 	fmt.Println("hi")
+	staticChecks = make(map[string]float64)
+	addChecks("Transportation", 2000.0)
+	addChecks("Lodging", 300.0)
+	addChecks("Employee Meals", 100.0)
 	lis, err := net.Listen("tcp", ":2014")
 	handle(err)
 	s := grpc.NewServer()
